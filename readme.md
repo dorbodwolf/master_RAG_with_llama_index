@@ -1,5 +1,5 @@
 ## 1. 写在前面
-借助llama-index库来实践基于LLM的RAG应用
+借助llama-index库来实践基于LLM的应用
 ref: https://docs.llamaindex.ai/en/stable/index.html
 
 
@@ -381,7 +381,9 @@ response = query_engine.query("What did the author do growing up?")
 print('Answer: ', response)
 ```
 
-## Text-to-SQL with PGVector
+### 3.1 Text-to-SQL with PGVector
 TODO
 
 https://docs.llamaindex.ai/en/stable/examples/query_engine/pgvector_sql_query_engine.html
+
+## TODO llamaindex在LinkedIn发的一些有用项目
