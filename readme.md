@@ -381,9 +381,22 @@ response = query_engine.query("What did the author do growing up?")
 print('Answer: ', response)
 ```
 
-### 3.1 Text-to-SQL with PGVector
-TODO
+chroma在```master_RAG_with_llama_index/chroma```下面创建了数据存储。
 
+### 3.1 Text-to-SQL with PGVector
 https://docs.llamaindex.ai/en/stable/examples/query_engine/pgvector_sql_query_engine.html
 
+测试数据："Lyft 2021 10k document" Lyft 公司在 2021 年提交给美国证券交易委员会 (U.S. Securities and Exchange Commission, SEC) 的 10-K 表格。10-K 表格是美国上市公司每年按照 SEC 规定提交的年度报告，其中包含了公司的财务状况、运营结果、管理层讨论与分析等重要信息。
+
+docker run postgres
+```bash
+docker run --hostname=0c4896b7ea54 --mac-address=02:42:ac:11:00:02 --env=POSTGRES_USER=jade_mayer --env=POSTGRES_DB=my_database  --env=POSTGRES_PASSWORD=123456 --env=POSTGRES_HOST_AUTH_METHOD=trust --env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/15/bin --env=GOSU_VERSION=1.16 --env=LANG=en_US.utf8 --env=PG_MAJOR=15 --env=PG_VERSION=15.5-1.pgdg110+1 --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data -p 5432:5432 --runtime=runc -d postgres:15.5-bullseye
+```
+官方的postgres docker image 没有安装vector扩展，可以参考这个： https://github.com/pgvector/pgvector?tab=readme-ov-file#docker
+
 ## TODO llamaindex在LinkedIn发的一些有用项目
+
+### Q&A
+### chatbots
+### agents
+### 多模态
