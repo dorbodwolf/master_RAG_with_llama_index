@@ -522,7 +522,10 @@ SQLQuery:
 "
 ```
 
-**思考：PromptTemplate类的关键贡献是什么？**
+**深入学习：PromptTemplate类的关键贡献是什么？**
+
+* 高级prompt技巧（变量映射、function）=> https://docs.llamaindex.ai/en/stable/examples/prompts/advanced_prompts.html
+* prompt模板API文档 => https://docs.llamaindex.ai/en/stable/api_reference/prompts.html
 
 ## TODO llamaindex在LinkedIn发的一些有用项目
 
