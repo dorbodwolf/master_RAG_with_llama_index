@@ -338,7 +338,7 @@ llama_index默认的向量库是在mem里面构建字典结构的embedding存储
 
 ```python
 import os
-os.environ["GOOGLE_API_KEY"] = "AIzaSyC2G-gs329x0LYVvoCGqCw23sQR2FKq-LE"
+os.environ["GOOGLE_API_KEY"] = "xxx-xxx-xxx"
 from llama_index import VectorStoreIndex, SimpleDirectoryReader
 from llama_index import ServiceContext
 from llama_index.llms import Gemini
@@ -383,7 +383,7 @@ print('Answer: ', response)
 
 chroma在```master_RAG_with_llama_index/chroma```下面创建了数据存储。
 
-### 3.1 Text-to-SQL with PGVector
+## 4. Text-to-SQL with PGVector
 https://docs.llamaindex.ai/en/stable/examples/query_engine/pgvector_sql_query_engine.html
 
 测试数据："Lyft 2021 10k document" Lyft 公司在 2021 年提交给美国证券交易委员会 (U.S. Securities and Exchange Commission, SEC) 的 10-K 表格。10-K 表格是美国上市公司每年按照 SEC 规定提交的年度报告，其中包含了公司的财务状况、运营结果、管理层讨论与分析等重要信息。
@@ -393,6 +393,136 @@ docker run postgres
 docker run --hostname=0c4896b7ea54 --mac-address=02:42:ac:11:00:02 --env=POSTGRES_USER=jade_mayer --env=POSTGRES_DB=my_database  --env=POSTGRES_PASSWORD=123456 --env=POSTGRES_HOST_AUTH_METHOD=trust --env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/15/bin --env=GOSU_VERSION=1.16 --env=LANG=en_US.utf8 --env=PG_MAJOR=15 --env=PG_VERSION=15.5-1.pgdg110+1 --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data -p 5432:5432 --runtime=runc -d postgres:15.5-bullseye
 ```
 官方的postgres docker image 没有安装vector扩展，可以参考这个： https://github.com/pgvector/pgvector?tab=readme-ov-file#docker
+
+```bash
+docker run --hostname=880a19bb03a2 --env=POSTGRES_USER=jade_mayer --env=POSTGRES_DB=my_database  --env=POSTGRES_PASSWORD=123456 --env=POSTGRES_HOST_AUTH_METHOD=trust  -p 5432:5432 --env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/15/bin --env=GOSU_VERSION=1.16 --env=LANG=en_US.utf8 --env=PG_MAJOR=15 --env=PG_VERSION=15.4-2.pgdg120+1 --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data --runtime=runc -d ankane/pgvector:latest
+```
+
+### 4.1 embedding插入pgvector库
+
+基于启动的pgvector数据库服务来建立连接：
+```python
+engine = create_engine("postgresql+psycopg2://jade_mayer:123456@localhost:5432/my_database")
+with engine.connect() as conn:
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    conn.commit()
+```
+
+将文本及bge模型提取的embedding插入pgvector：
+
+```python
+# 定义表schema，存储page_label embedding text
+Base = declarative_base()
+class SECTextChunk(Base):
+    __tablename__ = "sec_text_chunk"
+    id = mapped_column(Integer, primary_key=True)
+    page_label = mapped_column(Integer)
+    file_name = mapped_column(String)
+    text = mapped_column(String)
+    embedding = mapped_column(Vector(384))
+
+Base.metadata.drop_all(engine)
+Base.metadata.create_all(engine)
+
+# get embeddings for each node
+embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en")
+for node in nodes:
+    text_embedding = embed_model.get_text_embedding(node.get_content())
+    node.embedding = text_embedding
+
+# insert into database
+for node in nodes:
+    row_dict = {
+        "text": node.get_content(),
+        "embedding": node.embedding,
+        **node.metadata,
+    }
+    stmt = insert(SECTextChunk).values(**row_dict)
+    with engine.connect() as connection:
+        cursor = connection.execute(stmt)
+        connection.commit()
+```
+
+### 4.2 定义PGVectorSQLQueryEngine
+插入数据后配置查询引擎。改进默认的text-to-sql prompt来适配pgvector的语法，并通过一些few-shot例子来prompt正确使用语法。
+
+下面是一个prompt模板：
+```python
+text_to_sql_tmpl = """\
+Given an input question, first create a syntactically correct {dialect} \
+query to run, then look at the results of the query and return the answer. \
+You can order the results by a relevant column to return the most \
+interesting examples in the database.
+
+Pay attention to use only the column names that you can see in the schema \
+description. Be careful to not query for columns that do not exist. \
+Pay attention to which column is in which table. Also, qualify column names \
+with the table name when needed. 
+
+IMPORTANT NOTE: you can use specialized pgvector syntax (`<->`) to do nearest \
+neighbors/semantic search to a given vector from an embeddings column in the table. \
+The embeddings value for a given row typically represents the semantic meaning of that row. \
+The vector represents an embedding representation \
+of the question, given below. Do NOT fill in the vector values directly, but rather specify a \
+`[query_vector]` placeholder. For instance, some select statement examples below \
+(the name of the embeddings column is `embedding`):
+SELECT * FROM items ORDER BY embedding <-> '[query_vector]' LIMIT 5;
+SELECT * FROM items WHERE id != 1 ORDER BY embedding <-> (SELECT embedding FROM items WHERE id = 1) LIMIT 5;
+SELECT * FROM items WHERE embedding <-> '[query_vector]' < 5;
+
+You are required to use the following format, \
+each taking one line:
+
+Question: Question here
+SQLQuery: SQL Query to run
+SQLResult: Result of the SQLQuery
+Answer: Final answer here
+
+Only use tables listed below.
+{schema}
+
+
+Question: {query_str}
+SQLQuery: \
+"""
+```
+
+基于这个prompt模板来构造prompt
+```python
+text_to_sql_prompt = PromptTemplate(text_to_sql_tmpl)
+```
+输出的text_to_sql_prompt是这样的：
+```
+metadata={'prompt_type': <PromptType.CUSTOM: 'custom'>} 
+template_vars=['dialect', 'schema', 'query_str'] 
+kwargs={} output_parser=None 
+template_var_mappings=None 
+function_mappings=None 
+
+template=
+"
+Given an input question, first create a syntactically correct {dialect} query to run, then look at the results of the query and return the answer. You can order the results by a relevant column to return the most interesting examples in the database.\n\n
+Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Pay attention to which column is in which table. Also, qualify column names with the table name when needed. \n\n
+IMPORTANT NOTE: you can use specialized pgvector syntax (`<->`) to do nearest neighbors/semantic search to a given vector from an embeddings column in the table. The embeddings value for a given row typically represents the semantic meaning of that row. 
+The vector represents an embedding representation of the question, given below. Do NOT fill in the vector values directly, but rather specify a `[query_vector]` placeholder. 
+For instance, some select statement examples below (the name of the embeddings column is `embedding`):\n
+    SELECT * FROM items ORDER BY embedding <-> '[query_vector]' LIMIT 5;\n
+    SELECT * FROM items WHERE id != 1 ORDER BY embedding <-> (SELECT embedding FROM items WHERE id = 1) LIMIT 5;\n
+    SELECT * FROM items WHERE embedding <-> '[query_vector]' < 5;\n\n
+You are required to use the following format, each taking one line:\n\n
+    Question: Question here\n
+    SQLQuery: SQL Query to run\n
+    SQLResult: Result of the SQLQuery\n
+    Answer: Final answer here\n\n
+Only use tables listed below.\n
+    {schema}\n\n\n
+
+Question: {query_str}\n
+SQLQuery: 
+"
+```
+
+**思考：PromptTemplate类的关键贡献是什么？**
 
 ## TODO llamaindex在LinkedIn发的一些有用项目
 
