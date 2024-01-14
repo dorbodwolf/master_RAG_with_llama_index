@@ -622,6 +622,9 @@ SELECT text FROM sec_text_chunk WHERE page_label = 6 ORDER BY embedding <-> '[0.
 [('Impact of COVID-19 to our BusinessThe\n ongoing  COVID-19  pandemic  continues  to  impact  communities  in  the  United  States,  Canada  and  globa ... (2741 characters truncated) ... r Transportation Network\nOur transportation network off\ners riders seamless, personalized and on-demand access to a variety of mobility options.\n6',)]
 ```
 
+#### 结论
+
+对比了gemini、llama-2-13b、vicuna-13b、gpt-3.5-turbo，只有gpt能够返回符合预期的提取答案。
 
 ## TODO llamaindex在LinkedIn发的一些有用项目
 
